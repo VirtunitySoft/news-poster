@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Email Editor</title>
+  <link rel="icon" type="assests/virtunity-logo.png" href="favicon.ico">
+  <script src="tinymce/js/tinymce/tinymce.min.js" referrerpolicy="origin"></script>
+  <script>
+    // Initialize TinyMCE when DOM is ready
+    document.addEventListener('DOMContentLoaded', function() {
+      tinymce.init({
+        selector: '#emailContent',
+        height: 500,
+        menubar: false,
+        license_key: 'gpl', // Use GPL license
+        plugins: 'lists link code',
+        toolbar: 'undo redo | formatselect | bold italic | alignleft aligncenter alignright | bullist numlist | link | code',
+        content_style: 'body { font-family: Arial, sans-serif; font-size: 14px; }'
+      });
+    });
+  </script>
+</head>
+<body>
+  <h2>Compose Email</h2>
+  <form>
+    <table>
+      <thead>
+        <tr>
+          <th>Email Recipients</th>
+        </tr>
+      </thead>
+      <tbody id="emailTableBody">
+        <!-- Email recipients will be added here -->
+      </tbody>
+    </table>
+    
+    <h3>Database Configuration</h3>
+    <input type="text" id="supa_base_url" placeholder="Supabase URL" oninput="on_supa_config_changed()" style="width: 100%; font-size: 16px; margin-bottom: 10px;" />
+    <input type="text" id="supa_base_key" placeholder="Supabase Key" oninput="on_supa_config_changed()" style="width: 100%; font-size: 16px; margin-bottom: 10px;" />
+    <div style="text-align: center; margin-top: 10px;">
+      <button type="button" onclick="saveSupabaseData()">Save Database Access Data</button>
+    </div>
+    
+    <h3>Email Configuration</h3>
+    <input type="text" id="from" placeholder="From Email Address" style="width: 100%; font-size: 16px; margin-bottom: 10px;" />
+    <input type="password" id="password" placeholder="Email Password" style="width: 100%; font-size: 16px; margin-bottom: 10px;" />
+    <div style="text-align: center; margin-top: 10px;">
+      <button type="button" onclick="saveGmailData()">Save Gmail Access Data</button>
+    </div>
+
+    <h3>Email Content</h3>
+    <input type="text" id="subject" placeholder="Subject" style="width: 100%; font-size: 16px; margin-bottom: 10px;" />
+    <textarea id="emailContent"></textarea>
+    
+    <div style="text-align: center; margin-top: 10px;">
+      <button type="button" onclick="sendEmail()">Send Email</button>
+    </div>
+
+  </form>
+
+  <script>
+    const RECEIVER = 0;
+    const SENDER = 1;
+    const SUPA = 2;
+
+    // Display data function - called from Python
+    function displayData(type, data1, data2) {
+      console.log('displayData called:', type, data1, data2);
+      
+      try {
+        if (type == RECEIVER) {
+          const tableBody = document.getElementById('emailTableBody');
+          if (tableBody) {
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.textContent = data1;
+            row.appendChild(cell);
+            tableBody.appendChild(row);
+            console.log('Added email to table:', data1);
+          }
+        } else if (type == SENDER) {
+          const fromField = document.getElementById('from');
+          const passwordField = document.getElementById('password');
+          if (fromField) fromField.value = data1 || '';
+          if (passwordField) passwordField.value = data2 || '';
+          console.log('Updated sender fields');
+        } else if (type == SUPA) {
+          const keyField = document.getElementById('supa_base_key');
+          const urlField = document.getElementById('supa_base_url');
+          if (urlField) urlField.value = data1 || '';
+          if (keyField) keyField.value = data2 || '';
+          console.log('Updated Supabase fields');
+        }
+      } catch (error) {
+        console.error('Error in displayData:', error);
+      }
+    }
+
+    // Function to handle Supabase config change
+    function on_supa_config_changed() {
+      const supaBaseKey = document.getElementById('supa_base_key').value.trim();
+      const supaBaseUrl = document.getElementById('supa_base_url').value.trim();
+      
+      console.log('Supabase config changed:', {supaBaseKey, supaBaseUrl});
+      
+      // Only proceed if both fields have values
+      if (!supaBaseKey || !supaBaseUrl) {
+        console.log('Incomplete Supabase config, waiting for both values');
+        return;
+      }
+      
+      if (window.pywebview && window.pywebview.api) {
+        // Clear the current table data
+        const tableBody = document.getElementById('emailTableBody');
+        if (tableBody) {
+          tableBody.innerHTML = ''; // Clear existing rows
+          console.log('Cleared email table');
+        }
+
+        // Call the API to update Supabase config
+        window.pywebview.api.on_supa_config_changed(supaBaseKey, supaBaseUrl)
+          .then(result => {
+            console.log('Supabase config updated:', result);
+            // The Python backend should call displayData to populate the table
+          })
+          .catch(error => {
+            console.error('Error updating Supabase config:', error);
+            alert('Error connecting to database. Please check your credentials.');
+          });
+      } else {
+        console.error('PyWebView API not available');
+        alert('API not available');
+      }
+    }
+   
+    // Save Supabase data only
+    function saveSupabaseData() {
+      const supaBaseKey = document.getElementById('supa_base_key').value;
+      const supaBaseUrl = document.getElementById('supa_base_url').value;
+      
+      console.log('Saving Supabase data...');
+      
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.save_data(supaBaseKey, supaBaseUrl, '', '')
+          .then(result => {
+            console.log('Supabase data saved:', result);
+            if (result && result.success) {
+              alert('Database credentials saved successfully!');
+            }
+          })
+          .catch(error => {
+            console.error('Error saving Supabase data:', error);
+            alert('Error saving database credentials');
+          });
+      } else {
+        console.error('PyWebView API not available');
+        alert('API not available');
+      }
+    }
+
+    // Save Gmail data only
+    function saveGmailData() {
+      const from = document.getElementById('from').value;
+      const password = document.getElementById('password').value;
+      
+      console.log('Saving Gmail data...');
+      
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.save_data('', '', from, password)
+          .then(result => {
+            console.log('Gmail data saved:', result);
+            if (result && result.success) {
+              alert('Email credentials saved successfully!');
+            }
+          })
+          .catch(error => {
+            console.error('Error saving Gmail data:', error);
+            alert('Error saving email credentials');
+          });
+      } else {
+        console.error('PyWebView API not available');
+        alert('API not available');
+      }
+    }
+
+    // Save all data
+    function saveData() {
+      const supaBaseKey = document.getElementById('supa_base_key').value;
+      const supaBaseUrl = document.getElementById('supa_base_url').value;
+      const from = document.getElementById('from').value;
+      const password = document.getElementById('password').value;
+
+      console.log('Saving all data...');
+      
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.save_data(supaBaseKey, supaBaseUrl, from, password)
+          .then(result => {
+            console.log('All data saved:', result);
+            if (result && result.success) {
+              alert('All credentials saved successfully!');
+            }
+          })
+          .catch(error => {
+            console.error('Error saving data:', error);
+            alert('Error saving credentials');
+          });
+      } else {
+        console.error('PyWebView API not available');
+        alert('API not available');
+      }
+    }
+
+    // Send email function
+    async function sendEmail() {
+      const from = document.getElementById('from').value;
+      const password = document.getElementById('password').value;
+      const subject = document.getElementById('subject').value;
+      
+      // Get content from TinyMCE
+      let body = '';
+      if (tinymce.get("emailContent")) {
+        body = tinymce.get("emailContent").getContent();
+      } else {
+        body = document.getElementById('emailContent').value;
+      }
+
+      // Collect all emails from table
+      const rows = document.querySelectorAll('#emailTableBody tr');
+      const receivers = [];
+      rows.forEach(row => {
+        const email = row.querySelector('td').textContent;
+        if (email.trim() !== "") {
+          receivers.push(email.trim());
+        }
+      });
+
+      console.log('Sending email...', {from, receivers, subject, bodyLength: body.length});
+
+      if (window.pywebview && window.pywebview.api) {
+        try {
+          const result = await window.pywebview.api.send_email(from, password, receivers, subject, body);
+          console.log('Email result:', result);
+          
+          if (result && result.success) {
+            alert('Email sent successfully!');
+          } else {
+            alert('Error sending email: ' + (result.error || 'Unknown error'));
+          }
+        } catch (error) {
+          console.error('Error sending email:', error);
+          alert('Error sending email');
+        }
+      } else {
+        console.error('PyWebView API not available');
+        alert('API not available');
+      }
+    }
+
+    // Test connection function
+    function testConnection() {
+      console.log('Testing connection...');
+      
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.test_connection()
+          .then(result => {
+            console.log('Connection test result:', result);
+            alert('Connection successful: ' + result);
+          })
+          .catch(error => {
+            console.error('Connection test failed:', error);
+            alert('Connection test failed');
+          });
+      } else {
+        console.error('PyWebView API not available');
+        alert('PyWebView API not available');
+      }
+    }
+
+    // Check if API is available when page loads
+    function checkApiAvailability() {
+      console.log('Checking API availability...');
+      if (window.pywebview && window.pywebview.api) {
+        console.log('✅ PyWebView API is available');
+        return true;
+      } else {
+        console.log('❌ PyWebView API is not available yet, retrying...');
+        return false;
+      }
+    }
+
+    // Wait for PyWebView API to be available
+    function waitForApi() {
+      if (checkApiAvailability()) {
+        return;
+      }
+      
+      // Try again after a short delay
+      setTimeout(() => {
+        if (checkApiAvailability()) {
+          return;
+        }
+        
+        // Try one more time after another delay
+        setTimeout(() => {
+          checkApiAvailability();
+        }, 1000);
+      }, 500);
+    }
+
+    // Manual API check function
+    function checkApi() {
+      console.log('Manual API check...');
+      console.log('window.pywebview:', window.pywebview);
+      
+      if (window.pywebview) {
+        console.log('pywebview object exists');
+        console.log('window.pywebview.api:', window.pywebview.api);
+        
+        if (window.pywebview.api) {
+          console.log('✅ API is available!');
+          console.log('API methods:', Object.keys(window.pywebview.api));
+          alert('API is available! Methods: ' + Object.keys(window.pywebview.api).join(', '));
+        } else {
+          console.log('❌ API is not available');
+          alert('API is not available');
+        }
+      } else {
+        console.log('❌ pywebview object does not exist');
+        alert('pywebview object does not exist');
+      }
+    }
+
+    window.addEventListener('load', waitForApi);
+  </script>
+
+  <style>
+    body {
+      background-color: #1e1e1e;
+      color: #e0e0e0;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h2, h3 {
+      color: #ffffff;
+      margin-top: 20px;
+      margin-bottom: 10px;
+    }
+
+    form {
+      background-color: #2a2a2a;
+      padding: 20px;
+      border-radius: 8px;
+    }
+
+    input[type="text"], input[type="password"] {
+      background-color: #3a3a3a;
+      color: #ffffff;
+      border: 1px solid #555;
+      padding: 10px;
+      border-radius: 4px;
+    }
+
+    input[type="text"]:focus, input[type="password"]:focus {
+      border-color: #1a73e8;
+      outline: none;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 15px;
+    }
+
+    th, td {
+      border: 1px solid #444;
+      padding: 10px;
+      text-align: left;
+    }
+
+    thead {
+      background-color: #333;
+    }
+
+    button {
+      background-color: #1a73e8;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+    }
+
+    button:hover {
+      background-color: #0f62c1;
+    }
+
+    button:active {
+      background-color: #0d4f9a;
+    }
+  </style>
+</body>
+</html>
